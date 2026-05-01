@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Phone, Video, Search, MoreVertical, Flame, Paperclip, Smile, Send,
   ShieldAlert, Lock, Trash2, Sparkles, X, Loader2, CheckSquare,
-  CheckCheck, ArrowLeft,
+  CheckCheck, ArrowLeft, Dna, Brain, Zap, BarChart3, MessageCircle,
+  TrendingUp, Activity,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
@@ -10,7 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { conversationsApi, aiApi } from '@/lib/api';
-import type { Message, Conversation, UserProfile } from '@/lib/api';
+import type { Message, Conversation, UserProfile, CloneReplyResponse } from '@/lib/api';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useStore } from '@/store/useStore';
 import { onSocketEvent, emitSocketEvent } from '@/lib/socket';
@@ -39,6 +40,16 @@ export function ChatArea() {
     text: string | null;
     count: number;
   } | null>(null);
+
+  // ─── AI Cloner modal ────────────────────────────────────
+  const [cloneModal, setCloneModal] = useState<{
+    loading: boolean;
+    data: CloneReplyResponse | null;
+    inputMessage: string;
+    error: string | null;
+  } | null>(null);
+  const [typedPrediction, setTypedPrediction] = useState('');
+  const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { user } = useAuthStore();
@@ -244,6 +255,62 @@ export function ChatArea() {
       });
     }
   };
+
+  // ─── AI Clone Handler ───────────────────────────────────
+  const handleClonePredict = async () => {
+    if (!messageText.trim() || !activeConversationId) return;
+    const inputMsg = messageText.trim();
+
+    // Clear any previous typing animation
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current);
+      typingIntervalRef.current = null;
+    }
+    setTypedPrediction('');
+    setCloneModal({ loading: true, data: null, inputMessage: inputMsg, error: null });
+
+    try {
+      const result = await aiApi.cloneReply(activeConversationId, inputMsg);
+      setCloneModal({ loading: false, data: result, inputMessage: inputMsg, error: null });
+
+      // Typewriter animation for the prediction
+      const text = result.prediction;
+      let idx = 0;
+      setTypedPrediction('');
+      typingIntervalRef.current = setInterval(() => {
+        idx++;
+        setTypedPrediction(text.slice(0, idx));
+        if (idx >= text.length) {
+          if (typingIntervalRef.current) clearInterval(typingIntervalRef.current);
+          typingIntervalRef.current = null;
+        }
+      }, 30);
+    } catch (err) {
+      console.error('AI Clone failed:', err);
+      setCloneModal({
+        loading: false,
+        data: null,
+        inputMessage: inputMsg,
+        error: 'Could not generate prediction. AI service may be unavailable.',
+      });
+    }
+  };
+
+  const closeCloneModal = () => {
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current);
+      typingIntervalRef.current = null;
+    }
+    setTypedPrediction('');
+    setCloneModal(null);
+  };
+
+  // Cleanup typing interval on unmount
+  useEffect(() => {
+    return () => {
+      if (typingIntervalRef.current) clearInterval(typingIntervalRef.current);
+    };
+  }, []);
 
   // ─── Derived values ──────────────────────────────────────
   const getOtherUser = (): UserProfile | null => {
@@ -642,6 +709,25 @@ export function ChatArea() {
               >
                 {isOneTime ? <Flame className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
               </Button>
+              {/* 🧬 AI Cloner Button */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  'rounded-full shrink-0 transition-all duration-300 relative group',
+                  messageText.trim()
+                    ? 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 hover:shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+                    : 'text-text-muted opacity-40 cursor-not-allowed'
+                )}
+                onClick={handleClonePredict}
+                disabled={!messageText.trim()}
+                title="AI Clone — Predict their reply"
+              >
+                <Dna className="w-5 h-5" />
+                {messageText.trim() && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                )}
+              </Button>
               <Button
                 size="icon"
                 className={cn('rounded-full shrink-0', messageText.trim() ? 'bg-accent-primary text-white' : 'bg-bg-elevated text-text-muted cursor-not-allowed')}
@@ -733,6 +819,225 @@ export function ChatArea() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ─── AI Clone Prediction Modal ──────────────────────── */}
+      <AnimatePresence>
+        {cloneModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            onClick={(e) => { if (e.target === e.currentTarget) closeCloneModal(); }}
+          >
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-md" />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 30 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+              className="relative w-full max-w-lg bg-bg-elevated/95 backdrop-blur-2xl border border-emerald-500/20 rounded-3xl shadow-[0_0_60px_rgba(16,185,129,0.1)] overflow-hidden"
+            >
+              {/* Animated gradient accent bar */}
+              <div className="h-1.5 w-full bg-gradient-to-r from-emerald-500 via-cyan-400 to-violet-500 animate-gradient-x" />
+
+              {/* DNA Helix Background Pattern */}
+              <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-[0.03]">
+                <div className="absolute inset-0" style={{
+                  backgroundImage: `repeating-linear-gradient(0deg, transparent, transparent 20px, rgba(16,185,129,0.3) 20px, rgba(16,185,129,0.3) 21px)`,
+                  animation: 'dnaScroll 4s linear infinite',
+                }} />
+              </div>
+
+              <div className="relative p-6">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+                      <Dna className="w-5 h-5 text-emerald-400" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-text-primary flex items-center gap-2">
+                        AI Clone
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-semibold uppercase tracking-wider">
+                          Beta
+                        </span>
+                      </h3>
+                      <p className="text-xs text-text-muted">
+                        Predicting {otherUser?.displayName || 'their'} reply style
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={closeCloneModal}
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-bg-secondary transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Your message preview */}
+                <div className="mb-4 p-3 bg-accent-primary/5 border border-accent-primary/15 rounded-xl">
+                  <p className="text-[10px] uppercase tracking-wider text-accent-primary/60 font-semibold mb-1">Your message</p>
+                  <p className="text-sm text-text-primary">{cloneModal.inputMessage}</p>
+                </div>
+
+                {/* Content */}
+                {cloneModal.loading ? (
+                  /* ── Neural Loading Animation ── */
+                  <div className="flex flex-col items-center gap-4 py-10">
+                    <div className="relative w-20 h-20">
+                      {/* Outer ring */}
+                      <div className="absolute inset-0 rounded-full border-2 border-emerald-500/20 animate-ping" />
+                      {/* Middle ring */}
+                      <div className="absolute inset-2 rounded-full border-2 border-cyan-400/30 animate-spin" style={{ animationDuration: '3s' }} />
+                      {/* Inner core */}
+                      <div className="absolute inset-4 rounded-full bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center">
+                        <Brain className="w-6 h-6 text-emerald-400 animate-pulse" />
+                      </div>
+                      {/* Orbiting dots */}
+                      {[0, 1, 2].map((i) => (
+                        <motion.div
+                          key={i}
+                          className="absolute w-2 h-2 rounded-full bg-emerald-400"
+                          animate={{
+                            x: [0, 20 * Math.cos((i * 2.09) + 0), 0, -20 * Math.cos((i * 2.09) + 0), 0],
+                            y: [0, 20 * Math.sin((i * 2.09) + 0), 0, -20 * Math.sin((i * 2.09) + 0), 0],
+                            opacity: [0.3, 1, 0.3],
+                          }}
+                          transition={{ duration: 2, repeat: Infinity, delay: i * 0.3 }}
+                          style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
+                        />
+                      ))}
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-medium text-emerald-400">Analysing neural patterns…</p>
+                      <p className="text-xs text-text-muted mt-1">Decoding communication DNA</p>
+                    </div>
+                  </div>
+                ) : cloneModal.error ? (
+                  /* ── Error State ── */
+                  <div className="p-4 bg-danger/10 border border-danger/20 rounded-xl text-sm text-danger">
+                    ⚠️ {cloneModal.error}
+                  </div>
+                ) : cloneModal.data ? (
+                  /* ── Prediction Result ── */
+                  <div className="space-y-4">
+                    {/* Predicted reply bubble */}
+                    <div className="relative">
+                      <div className="flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border border-emerald-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                          <Avatar src={otherUser?.avatarUrl} alt={otherUser?.displayName || ''} size="sm" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="text-xs font-semibold text-emerald-400">{otherUser?.displayName || 'User'}</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400/70 border border-emerald-500/15">AI Clone</span>
+                          </div>
+                          <div className="p-3.5 bg-message-received rounded-2xl rounded-tl-sm border border-border-subtle relative">
+                            <p className="text-sm text-text-primary leading-relaxed">
+                              {typedPrediction}
+                              {typedPrediction.length < (cloneModal.data?.prediction?.length || 0) && (
+                                <span className="inline-block w-0.5 h-4 bg-emerald-400 ml-0.5 animate-pulse" />
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Confidence meter */}
+                    <div className="flex items-center gap-3 px-1">
+                      <div className="flex items-center gap-1.5 text-xs text-text-muted">
+                        <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Confidence</span>
+                      </div>
+                      <div className="flex-1 h-1.5 bg-bg-secondary rounded-full overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(cloneModal.data.confidence * 100)}%` }}
+                          transition={{ duration: 1, delay: 0.5, ease: 'easeOut' }}
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400"
+                        />
+                      </div>
+                      <span className="text-xs font-semibold text-emerald-400">{Math.round(cloneModal.data.confidence * 100)}%</span>
+                    </div>
+
+                    {/* Style Profile Grid */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <StyleCard
+                        icon={<MessageCircle className="w-3.5 h-3.5" />}
+                        label="Avg Length"
+                        value={`${cloneModal.data.style_profile.avg_length} words`}
+                      />
+                      <StyleCard
+                        icon={<Smile className="w-3.5 h-3.5" />}
+                        label="Emoji Use"
+                        value={cloneModal.data.style_profile.emoji_frequency > 0.5 ? 'Frequent' : cloneModal.data.style_profile.emoji_frequency > 0.1 ? 'Sometimes' : 'Rare'}
+                      />
+                      <StyleCard
+                        icon={<Zap className="w-3.5 h-3.5" />}
+                        label="Mood"
+                        value={cloneModal.data.style_profile.mood}
+                      />
+                      <StyleCard
+                        icon={<TrendingUp className="w-3.5 h-3.5" />}
+                        label="Vocabulary"
+                        value={cloneModal.data.style_profile.vocabulary_level}
+                      />
+                      <StyleCard
+                        icon={<BarChart3 className="w-3.5 h-3.5" />}
+                        label="Slang"
+                        value={cloneModal.data.style_profile.slang_level}
+                      />
+                      <StyleCard
+                        icon={<Activity className="w-3.5 h-3.5" />}
+                        label="Style"
+                        value={cloneModal.data.style_profile.punctuation_style}
+                      />
+                    </div>
+
+                    {/* Favorite Emojis */}
+                    {cloneModal.data.style_profile.favorite_emojis.length > 0 && (
+                      <div className="flex items-center gap-2 px-1">
+                        <span className="text-xs text-text-muted">Top emojis:</span>
+                        <div className="flex gap-1">
+                          {cloneModal.data.style_profile.favorite_emojis.map((e, i) => (
+                            <span key={i} className="text-base bg-bg-secondary px-1.5 py-0.5 rounded-lg">{e}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Method & Disclaimer */}
+                    <div className="pt-2 border-t border-border-subtle">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[10px] text-text-muted">
+                          🧬 AI prediction — not a real message
+                        </p>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-bg-secondary text-text-muted border border-border-subtle">
+                          {cloneModal.data.method === 'ai' ? '✨ AI Model' : '⚡ Template Engine'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Close Button */}
+                {!cloneModal.loading && (
+                  <button
+                    onClick={closeCloneModal}
+                    className="mt-4 w-full py-2.5 rounded-xl text-sm font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/15 transition-colors"
+                  >
+                    Got it
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -754,5 +1059,23 @@ function SelectCheckbox({ selected }: { selected: boolean }) {
         />
       )}
     </div>
+  );
+}
+
+// ─── Helper: Style Profile Card ───────────────────────────
+function StyleCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.3 }}
+      className="p-2.5 bg-bg-secondary/50 border border-border-subtle rounded-xl text-center group hover:border-emerald-500/20 hover:bg-emerald-500/5 transition-all"
+    >
+      <div className="w-6 h-6 mx-auto mb-1 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
+        {icon}
+      </div>
+      <p className="text-[9px] text-text-muted uppercase tracking-wider mb-0.5">{label}</p>
+      <p className="text-xs font-semibold text-text-primary capitalize">{value}</p>
+    </motion.div>
   );
 }

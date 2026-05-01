@@ -15,6 +15,7 @@ async def lifespan(app: FastAPI):
     from routes.toxic import router as toxic_router  # noqa: F401
     from routes.face import router as face_router  # noqa: F401
     from routes.summarize import router as summarize_router  # noqa: F401
+    from routes.clone import router as clone_router  # noqa: F401
 
     elapsed = time.time() - start
     print(f"✅ AI Service ready in {elapsed:.1f}s (API-only mode, no local models)")
@@ -52,10 +53,12 @@ def verify_service_secret(x_service_secret: str = Header(default="")):
 from routes.toxic import router as toxic_router
 from routes.face import router as face_router
 from routes.summarize import router as summarize_router
+from routes.clone import router as clone_router
 
 app.include_router(toxic_router, prefix="/toxic", tags=["Toxicity"])
 app.include_router(face_router, prefix="/face", tags=["Face Auth"])
 app.include_router(summarize_router, prefix="/summarize", tags=["Summarization"])
+app.include_router(clone_router, prefix="/clone", tags=["AI Cloner"])
 
 
 @app.get("/health")
@@ -79,5 +82,6 @@ async def ready():
             "summarizer": "huggingface-api",
             "face_embedding": "huggingface-api",
             "emotion_detection": "huggingface-api",
+            "ai_cloner": "huggingface-api",
         },
     }

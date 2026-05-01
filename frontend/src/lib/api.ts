@@ -285,6 +285,9 @@ export const aiApi = {
 
   summarize: (messages: { sender: string; content: string }[]) =>
     unwrap<{ summary: string }>(apiClient.post('/ai/summarize', { messages })),
+
+  cloneReply: (conversationId: string, message: string) =>
+    unwrap<CloneReplyResponse>(apiClient.post('/ai/clone-reply', { conversationId, message })),
 };
 
 // ─── Status API ──────────────────────────────────────────
@@ -402,4 +405,25 @@ export interface AppNotification {
   data?: Record<string, unknown>;
   isRead: boolean;
   createdAt: string;
+}
+
+// ─── AI Cloner Types ─────────────────────────────────────
+export interface StyleProfile {
+  avg_length: number;
+  emoji_frequency: number;
+  favorite_emojis: string[];
+  punctuation_style: string;
+  capitalization: string;
+  vocabulary_level: string;
+  greeting_style: string;
+  mood: string;
+  slang_level: string;
+  response_patterns: string[];
+}
+
+export interface CloneReplyResponse {
+  prediction: string;
+  style_profile: StyleProfile;
+  confidence: number;
+  method: string;
 }
