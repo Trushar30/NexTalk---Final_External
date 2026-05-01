@@ -1,13 +1,28 @@
 import os
-import requests as http_requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 from cachetools import TTLCache
+from huggingface_hub import InferenceClient
 
 router = APIRouter()
 
 # ─── Cache: same conversation → same summary for 10 minutes ──
 _cache = TTLCache(maxsize=100, ttl=600)
+
+# ─── HuggingFace Inference Client ──
+HF_API_TOKEN = os.getenv("HF_API_TOKEN", "")
+_client = None
+
+# Expose for readiness check
+summarizer = "api-only"
+
+
+def _get_client() -> InferenceClient:
+    """Get or create HuggingFace InferenceClient."""
+    global _client
+    if _client is None:
+        _client = InferenceClient(token=HF_API_TOKEN if HF_API_TOKEN else None)
+    return _client
 
 
 class SummarizeRequest(BaseModel):
@@ -16,14 +31,6 @@ class SummarizeRequest(BaseModel):
 
 class SummarizeResponse(BaseModel):
     summary: str
-
-
-# ─── HuggingFace Inference API ──
-HF_API_TOKEN = os.getenv("HF_API_TOKEN", "")
-HF_API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
-
-# Expose for readiness check
-summarizer = "api-only"
 
 
 def _format_messages(messages: list[dict]) -> str:
@@ -35,39 +42,20 @@ def _format_messages(messages: list[dict]) -> str:
     )
 
 
-def _summarize_via_huggingface_api(text: str) -> str:
-    """Call HuggingFace Inference API for summarization."""
-    headers = {}
-    if HF_API_TOKEN:
-        headers["Authorization"] = f"Bearer {HF_API_TOKEN}"
-
-    response = http_requests.post(
-        HF_API_URL,
-        headers=headers,
-        json={
-            "inputs": text[:4000],
-            "parameters": {
-                "max_length": 130,
-                "min_length": 30,
-                "do_sample": False,
-            },
-            "options": {
-                "wait_for_model": True,  # Wait if model is cold-starting on HF
-            },
-        },
-        timeout=60,
+def _summarize_via_huggingface(text: str) -> str:
+    """Call HuggingFace Inference API for summarization using the official client."""
+    client = _get_client()
+    result = client.summarization(
+        text[:4000],
+        model="facebook/bart-large-cnn",
     )
-
-    if response.status_code == 503:
-        data = response.json()
-        raise Exception(f"HF model loading: {data.get('error', 'unavailable')}")
-
-    response.raise_for_status()
-    data = response.json()
-
-    if isinstance(data, list) and len(data) > 0:
-        return data[0].get("summary_text", text[:200])
-    return text[:200]
+    # result is a SummarizationOutput with a summary_text attribute
+    if hasattr(result, 'summary_text'):
+        return result.summary_text
+    # Fallback for dict-like response
+    if isinstance(result, dict):
+        return result.get('summary_text', text[:200])
+    return str(result) if result else text[:200]
 
 
 @router.post("", response_model=SummarizeResponse)
@@ -87,7 +75,7 @@ async def summarize_conversation(request: SummarizeRequest):
         return SummarizeResponse(summary=_cache[cache_key])
 
     try:
-        summary = _summarize_via_huggingface_api(text)
+        summary = _summarize_via_huggingface(text)
         _cache[cache_key] = summary
         return SummarizeResponse(summary=summary)
     except Exception as e:

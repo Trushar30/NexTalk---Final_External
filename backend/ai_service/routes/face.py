@@ -2,23 +2,28 @@ import io
 import os
 import numpy as np
 import json
-import requests as http_requests
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 from PIL import Image
-import base64
+from huggingface_hub import InferenceClient
 
 router = APIRouter()
 
 # Maximum upload size: 2MB
 MAX_IMAGE_SIZE = 2 * 1024 * 1024
 
-# ─── HuggingFace Inference API for Face Embeddings ──
+# ─── HuggingFace Inference Client ──
 HF_API_TOKEN = os.getenv("HF_API_TOKEN", "")
+_client = None
 
-# Use a lightweight face embedding model via HF API
-HF_FACE_EMBED_URL = "https://api-inference.huggingface.co/models/openai/clip-vit-base-patch32"
-HF_EMOTION_URL = "https://api-inference.huggingface.co/models/trpakov/vit-face-expression"
+
+def _get_client() -> InferenceClient:
+    """Get or create HuggingFace InferenceClient."""
+    global _client
+    if _client is None:
+        _client = InferenceClient(token=HF_API_TOKEN if HF_API_TOKEN else None)
+    return _client
+
 
 EMOTION_TO_MOOD = {
     "happy": "HAPPY",
@@ -59,63 +64,49 @@ async def load_image_bytes(image: UploadFile) -> bytes:
         raise HTTPException(status_code=400, detail=f"Invalid image: {str(e)}")
 
 
-def _get_hf_headers() -> dict:
-    """Get HuggingFace API headers."""
-    headers = {}
-    if HF_API_TOKEN:
-        headers["Authorization"] = f"Bearer {HF_API_TOKEN}"
-    return headers
-
-
 def _get_face_embedding(image_bytes: bytes) -> list[float]:
-    """Get face embedding via HuggingFace Inference API using CLIP."""
-    response = http_requests.post(
-        HF_FACE_EMBED_URL,
-        headers=_get_hf_headers(),
-        data=image_bytes,
-        timeout=30,
+    """Get image embedding via HuggingFace Inference API using CLIP."""
+    client = _get_client()
+    # Use feature extraction to get embeddings
+    result = client.feature_extraction(
+        image_bytes,
+        model="openai/clip-vit-base-patch32",
     )
-
-    if response.status_code == 503:
-        raise Exception("HF model loading")
-
-    response.raise_for_status()
-    data = response.json()
-
-    # CLIP returns image embeddings as a flat list
-    if isinstance(data, list) and len(data) > 0:
-        if isinstance(data[0], list):
-            return data[0]
-        return data
-
-    raise Exception(f"Unexpected embedding response format: {type(data)}")
+    # result is typically a nested list of floats
+    if isinstance(result, list):
+        # Flatten if needed — CLIP returns [1, 512] or similar
+        if isinstance(result[0], list):
+            return result[0]
+        return result
+    if isinstance(result, np.ndarray):
+        return result.flatten().tolist()
+    raise Exception(f"Unexpected embedding response: {type(result)}")
 
 
 def _get_emotion(image_bytes: bytes) -> dict:
     """Detect emotion via HuggingFace Inference API."""
-    response = http_requests.post(
-        HF_EMOTION_URL,
-        headers=_get_hf_headers(),
-        data=image_bytes,
-        timeout=30,
+    client = _get_client()
+    results = client.image_classification(
+        image_bytes,
+        model="trpakov/vit-face-expression",
     )
 
-    if response.status_code == 503:
-        raise Exception("HF emotion model loading")
+    if isinstance(results, list) and len(results) > 0:
+        dominant = max(results, key=lambda x: x.score if hasattr(x, 'score') else x.get('score', 0))
+        label = dominant.label if hasattr(dominant, 'label') else dominant.get('label', 'neutral')
+        score = dominant.score if hasattr(dominant, 'score') else dominant.get('score', 0.0)
+        
+        all_emotions = {}
+        for r in results:
+            l = r.label if hasattr(r, 'label') else r.get('label', '')
+            s = r.score if hasattr(r, 'score') else r.get('score', 0.0)
+            all_emotions[l.lower()] = round(s * 100, 2)
 
-    response.raise_for_status()
-    data = response.json()
-
-    # HF returns [[{label, score}, ...]]
-    if isinstance(data, list) and len(data) > 0:
-        results = data[0] if isinstance(data[0], list) else data
-        if isinstance(results, list) and len(results) > 0:
-            dominant = max(results, key=lambda x: x.get("score", 0))
-            return {
-                "dominant_emotion": dominant["label"].lower(),
-                "confidence": round(dominant["score"] * 100, 2),
-                "all_emotions": {r["label"].lower(): round(r["score"] * 100, 2) for r in results},
-            }
+        return {
+            "dominant_emotion": label.lower(),
+            "confidence": round(score * 100, 2),
+            "all_emotions": all_emotions,
+        }
 
     return {"dominant_emotion": "neutral", "confidence": 0.0, "all_emotions": {}}
 
