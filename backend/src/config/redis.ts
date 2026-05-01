@@ -12,11 +12,11 @@ function buildRedisOptions(): RedisOptions {
     maxRetriesPerRequest: null, // Required for BullMQ
     enableReadyCheck: false,
     retryStrategy: (times: number) => {
-      if (times > 20) {
-        console.error('❌ Redis: max retries reached, giving up');
+      if (times > 5) {
+        // Stop retrying after 5 attempts — Redis is down, degrade gracefully
         return null;
       }
-      return Math.min(times * 500, 10000);
+      return Math.min(times * 1000, 5000);
     },
     reconnectOnError: (err: Error) => {
       const targetErrors = ['READONLY', 'ECONNRESET', 'ETIMEDOUT'];
@@ -66,7 +66,9 @@ export async function isRedisAvailable(): Promise<boolean> {
 
 // Separate connection for pub/sub (shared connections cannot mix commands + pub/sub)
 export const redisSub = new Redis(env.REDIS_URL, buildRedisOptions());
-redisSub.connect().catch(() => { /* handled by event listeners */ });
+redisSub.on('error', (err) => { console.warn('Redis sub error:', err.message); });
+redisSub.connect().catch(() => { /* initial connect failure is fine */ });
 
 export const redisPub = new Redis(env.REDIS_URL, buildRedisOptions());
-redisPub.connect().catch(() => { /* handled by event listeners */ });
+redisPub.on('error', (err) => { console.warn('Redis pub error:', err.message); });
+redisPub.connect().catch(() => { /* initial connect failure is fine */ });
