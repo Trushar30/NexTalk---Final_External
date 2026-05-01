@@ -3,8 +3,11 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# argon2 requires native build tools on Alpine
+RUN apk add --no-cache python3 make g++
+
 COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+RUN npm ci
 
 COPY tsconfig.json ./
 COPY src/ ./src/
@@ -18,8 +21,14 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+# argon2 native addon must be compiled in production stage too
+RUN apk add --no-cache python3 make g++
+
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts
+RUN npm ci --omit=dev
+
+# Remove build tools after install to shrink image
+RUN apk del python3 make g++
 
 COPY --from=builder /app/dist ./dist
 
