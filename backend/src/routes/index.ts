@@ -6,6 +6,7 @@ import conversationRoutes from './conversation.routes';
 import teamRoutes from './team.routes';
 import notificationRoutes from './notification.routes';
 import aiRoutes from './ai.routes';
+import statusRoutes from './status.routes';
 
 const router = Router();
 
@@ -16,5 +17,6 @@ router.use('/conversations', conversationRoutes);
 router.use('/teams', teamRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/ai', aiRoutes);
+router.use('/status', statusRoutes);
 
 export default router;

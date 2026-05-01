@@ -287,6 +287,25 @@ export const aiApi = {
     unwrap<{ summary: string }>(apiClient.post('/ai/summarize', { messages })),
 };
 
+// ─── Status API ──────────────────────────────────────────
+export interface ServiceStatus {
+  name: string;
+  status: 'operational' | 'degraded' | 'down';
+  latencyMs: number | null;
+  message?: string;
+}
+
+export interface SystemStatus {
+  overall: 'operational' | 'degraded';
+  services: ServiceStatus[];
+  checkedAt: string;
+}
+
+export const statusApi = {
+  check: () =>
+    unwrap<SystemStatus>(apiClient.get('/status')),
+};
+
 // ─── Types ───────────────────────────────────────────────
 export interface AuthUser {
   id: string;

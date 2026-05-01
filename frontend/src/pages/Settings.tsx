@@ -3,18 +3,20 @@ import { cn } from '@/lib/utils';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { User, Bell, Shield, Paintbrush, HelpCircle, LogOut, X, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { User, Bell, Shield, Paintbrush, HelpCircle, LogOut, X, AlertCircle, CheckCircle2, Activity } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/store/useAuthStore';
 import { authApi, usersApi } from '@/lib/api';
 import { Avatar } from '@/components/ui/Avatar';
 import { PREDEFINED_AVATARS } from '@/constants/avatars';
+import { ServiceStatusPanel } from '@/components/ui/ServiceStatusPanel';
 
 export default function SettingsScreen() {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   
+  const [activeSection, setActiveSection] = useState('account');
   const [isScanning, setIsScanning] = useState(false);
   const [scanStatus, setScanStatus] = useState<'idle' | 'scanning' | 'registering' | 'success' | 'error'>('idle');
   const [scanError, setScanError] = useState('');
@@ -100,11 +102,12 @@ export default function SettingsScreen() {
   };
   
   const menuSections = [
-    { title: 'Account', icon: <User className="w-5 h-5" />, items: ['Profile Information', 'Security & Face ID', 'Privacy'] },
-    { title: 'Notifications', icon: <Bell className="w-5 h-5" />, items: ['Push Notifications', 'Email Preferences', 'Muted Conversations'] },
-    { title: 'Appearance', icon: <Paintbrush className="w-5 h-5" />, items: ['Theme', 'Mood Ring Colors', 'Chat Wallpaper'] },
-    { title: 'Safety & Trust', icon: <Shield className="w-5 h-5" />, items: ['Blocked Users', 'Content Filters', 'Data Export'] },
-    { title: 'Support', icon: <HelpCircle className="w-5 h-5" />, items: ['Help Center', 'Report a Problem', 'About'] },
+    { title: 'Account', key: 'account', icon: <User className="w-5 h-5" />, items: ['Profile Information', 'Security & Face ID', 'Privacy'] },
+    { title: 'System Status', key: 'status', icon: <Activity className="w-5 h-5" />, items: ['Service Health', 'AI Features', 'Infrastructure'] },
+    { title: 'Notifications', key: 'notifications', icon: <Bell className="w-5 h-5" />, items: ['Push Notifications', 'Email Preferences', 'Muted Conversations'] },
+    { title: 'Appearance', key: 'appearance', icon: <Paintbrush className="w-5 h-5" />, items: ['Theme', 'Mood Ring Colors', 'Chat Wallpaper'] },
+    { title: 'Safety & Trust', key: 'safety', icon: <Shield className="w-5 h-5" />, items: ['Blocked Users', 'Content Filters', 'Data Export'] },
+    { title: 'Support', key: 'support', icon: <HelpCircle className="w-5 h-5" />, items: ['Help Center', 'Report a Problem', 'About'] },
   ];
 
   const handleLogout = async () => {
@@ -134,10 +137,11 @@ export default function SettingsScreen() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pt-4 flex-1">
           {/* Navigation Sidebar (internal to settings) */}
           <div className="space-y-2 lg:col-span-1 border-r border-border-subtle pr-6 hidden md:block">
-            {menuSections.map((section, idx) => (
+            {menuSections.map((section) => (
               <button 
-                key={section.title}
-                className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-colors ${idx === 0 ? 'bg-accent-primary/10 text-accent-glow font-medium' : 'text-text-secondary hover:bg-bg-secondary hover:text-text-primary'}`}
+                key={section.key}
+                onClick={() => setActiveSection(section.key)}
+                className={`w-full text-left px-4 py-3 rounded-xl flex items-center gap-3 transition-colors ${activeSection === section.key ? 'bg-accent-primary/10 text-accent-glow font-medium' : 'text-text-secondary hover:bg-bg-secondary hover:text-text-primary'}`}
               >
                 {section.icon}
                 {section.title}
@@ -147,76 +151,119 @@ export default function SettingsScreen() {
 
           {/* Active Settings View */}
           <div className="lg:col-span-2 space-y-6">
-             <h2 className="text-xl font-bold border-b border-border-subtle pb-2">Account Details</h2>
+            {/* Account Section */}
+            {activeSection === 'account' && (
+              <motion.div
+                key="account"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25 }}
+                className="space-y-6"
+              >
+                <h2 className="text-xl font-bold border-b border-border-subtle pb-2">Account Details</h2>
              
-              <Card glass className="p-6 space-y-6">
-                <div className="flex flex-col gap-4 pb-4 border-b border-border-subtle">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h3 className="font-medium">Profile Avatar</h3>
-                      <p className="text-sm text-text-secondary">Select your unique presence</p>
+                <Card glass className="p-6 space-y-6">
+                  <div className="flex flex-col gap-4 pb-4 border-b border-border-subtle">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <h3 className="font-medium">Profile Avatar</h3>
+                        <p className="text-sm text-text-secondary">Select your unique presence</p>
+                      </div>
+                      <Avatar 
+                        src={user?.avatarUrl} 
+                        alt={user?.displayName || 'User'} 
+                        size="lg" 
+                        mood={(user?.currentMood?.toLowerCase() || 'neutral') as any}
+                        showMood
+                      />
                     </div>
-                    <Avatar 
-                      src={user?.avatarUrl} 
-                      alt={user?.displayName || 'User'} 
-                      size="lg" 
-                      mood={(user?.currentMood?.toLowerCase() || 'neutral') as any}
-                      showMood
-                    />
-                  </div>
                   
-                  <div className="grid grid-cols-8 gap-2 mt-2">
-                    {PREDEFINED_AVATARS.map((url, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => handleUpdateAvatar(url)}
-                        className={cn(
-                          "relative rounded-full overflow-hidden border-2 transition-all hover:scale-110 w-10 h-10",
-                          user?.avatarUrl === url ? "border-accent-primary scale-110 shadow-[0_0_10px_rgba(159,95,241,0.5)]" : "border-transparent opacity-60 hover:opacity-100"
-                        )}
-                      >
-                        <img src={url} alt={`Avatar ${idx + 1}`} className="w-full h-full object-cover" />
-                      </button>
-                    ))}
+                    <div className="grid grid-cols-8 gap-2 mt-2">
+                      {PREDEFINED_AVATARS.map((url, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => handleUpdateAvatar(url)}
+                          className={cn(
+                            "relative rounded-full overflow-hidden border-2 transition-all hover:scale-110 w-10 h-10",
+                            user?.avatarUrl === url ? "border-accent-primary scale-110 shadow-[0_0_10px_rgba(159,95,241,0.5)]" : "border-transparent opacity-60 hover:opacity-100"
+                          )}
+                        >
+                          <img src={url} alt={`Avatar ${idx + 1}`} className="w-full h-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex justify-between items-center pb-4 border-b border-border-subtle">
-                  <div>
-                    <h3 className="font-medium">Username</h3>
-                    <p className="text-sm text-text-secondary">@{user?.username || 'unknown'}</p>
+                  <div className="flex justify-between items-center pb-4 border-b border-border-subtle">
+                    <div>
+                      <h3 className="font-medium">Username</h3>
+                      <p className="text-sm text-text-secondary">@{user?.username || 'unknown'}</p>
+                    </div>
+                    <Button variant="outline" size="sm">Edit</Button>
                   </div>
-                  <Button variant="outline" size="sm">Edit</Button>
-                </div>
-                <div className="flex justify-between items-center pb-4 border-b border-border-subtle">
-                  <div>
-                    <h3 className="font-medium">Email</h3>
-                    <p className="text-sm text-text-secondary">{user?.email || 'unknown'}</p>
+                  <div className="flex justify-between items-center pb-4 border-b border-border-subtle">
+                    <div>
+                      <h3 className="font-medium">Email</h3>
+                      <p className="text-sm text-text-secondary">{user?.email || 'unknown'}</p>
+                    </div>
+                    <Button variant="outline" size="sm">Edit</Button>
                   </div>
-                  <Button variant="outline" size="sm">Edit</Button>
-                </div>
-                <div className="flex justify-between items-center pb-4 border-b border-border-subtle">
-                  <div>
-                    <h3 className="font-medium">Display Name</h3>
-                    <p className="text-sm text-text-secondary">{user?.displayName || 'Unknown'}</p>
+                  <div className="flex justify-between items-center pb-4 border-b border-border-subtle">
+                    <div>
+                      <h3 className="font-medium">Display Name</h3>
+                      <p className="text-sm text-text-secondary">{user?.displayName || 'Unknown'}</p>
+                    </div>
+                    <Button variant="outline" size="sm">Edit</Button>
                   </div>
-                  <Button variant="outline" size="sm">Edit</Button>
-                </div>
-                <div className="flex justify-between items-center pb-4 border-b border-border-subtle">
-                  <div>
-                    <h3 className="font-medium">Face ID Authentication</h3>
-                    <p className="text-sm text-success font-medium">Enabled</p>
+                  <div className="flex justify-between items-center pb-4 border-b border-border-subtle">
+                    <div>
+                      <h3 className="font-medium">Face ID Authentication</h3>
+                      <p className="text-sm text-success font-medium">Enabled</p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={handleOpenFaceScan}>Rescan Face</Button>
                   </div>
-                  <Button variant="outline" size="sm" onClick={handleOpenFaceScan}>Rescan Face</Button>
-                </div>
-                <div className="flex justify-between items-center pt-2">
-                  <div>
-                    <h3 className="font-medium text-danger">Delete Account</h3>
-                    <p className="text-sm text-text-secondary">Permanently remove your account and data.</p>
+                  <div className="flex justify-between items-center pt-2">
+                    <div>
+                      <h3 className="font-medium text-danger">Delete Account</h3>
+                      <p className="text-sm text-text-secondary">Permanently remove your account and data.</p>
+                    </div>
+                    <Button variant="danger" size="sm">Delete</Button>
                   </div>
-                  <Button variant="danger" size="sm">Delete</Button>
-                </div>
-             </Card>
+                </Card>
+              </motion.div>
+            )}
+
+            {/* System Status Section */}
+            {activeSection === 'status' && (
+              <motion.div
+                key="status"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25 }}
+              >
+                <Card glass className="p-6">
+                  <ServiceStatusPanel />
+                </Card>
+              </motion.div>
+            )}
+
+            {/* Other sections placeholder */}
+            {!['account', 'status'].includes(activeSection) && (
+              <motion.div
+                key={activeSection}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25 }}
+                className="space-y-6"
+              >
+                <h2 className="text-xl font-bold border-b border-border-subtle pb-2">
+                  {menuSections.find(s => s.key === activeSection)?.title}
+                </h2>
+                <Card glass className="p-6">
+                  <p className="text-text-secondary text-sm">This section is coming soon.</p>
+                </Card>
+              </motion.div>
+            )}
           </div>
         </div>
         
