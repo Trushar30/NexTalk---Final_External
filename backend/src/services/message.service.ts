@@ -2,7 +2,7 @@ import { Message, IMessage, Conversation } from '../models';
 import { conversationService } from './conversation.service';
 import { AppError } from '../middleware/errorHandler.middleware';
 import { SendMessagePayload } from '../types';
-import { toxicCheckQueue, notificationQueue, messageExpiryQueue } from '../jobs/queues';
+import { toxicCheckQueue, notificationQueue, messageExpiryQueue, safeQueueAdd } from '../jobs/queues';
 import CryptoJS from 'crypto-js';
 import { env } from '../config/env';
 
@@ -33,7 +33,7 @@ export class MessageService {
     // Bump conversation updatedAt
     await Conversation.updateOne({ _id: conversationId }, { updatedAt: new Date() });
 
-    // Async toxic check (non-blocking)
+    // Async toxic check (non-blocking) — uses safeQueueAdd for graceful degradation
     if (content) {
       let plainContent = content;
       if (content.startsWith('U2FsdGVkX1')) {
@@ -44,12 +44,12 @@ export class MessageService {
           console.error('Backend decryption for toxic check failed:', err);
         }
       }
-      await toxicCheckQueue.add('toxic-check', { messageId: message.id, content: plainContent });
+      await safeQueueAdd(toxicCheckQueue, 'toxic-check', { messageId: message.id, content: plainContent });
     }
 
     // Schedule expiry for one-time messages (24h fallback)
     if (isOneTime) {
-      await messageExpiryQueue.add('expire-onetimemsg', { messageId: message.id }, { delay: 24 * 60 * 60 * 1000 });
+      await safeQueueAdd(messageExpiryQueue, 'expire-onetimemsg', { messageId: message.id }, { delay: 24 * 60 * 60 * 1000 });
     }
 
     // Trigger notification for other members
@@ -62,7 +62,7 @@ export class MessageService {
         previewText = isEncrypted ? 'Sent a secure message' : (content.length > 100 ? content.substring(0, 100) + '...' : content);
       }
       
-      await notificationQueue.add('send-notification', {
+      await safeQueueAdd(notificationQueue, 'send-notification', {
         userId: recipientId,
         type: 'MESSAGE',
         title: 'New message',
@@ -99,7 +99,7 @@ export class MessageService {
           console.error('Backend decryption for toxic check failed:', err);
         }
       }
-      await toxicCheckQueue.add('toxic-check', { messageId: message.id, content: plainContent });
+      await safeQueueAdd(toxicCheckQueue, 'toxic-check', { messageId: message.id, content: plainContent });
     }
 
     return message;

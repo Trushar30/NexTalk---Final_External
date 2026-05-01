@@ -4,10 +4,11 @@ import basicSsl from '@vitejs/plugin-basic-ssl'
 import path from "path"
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
-    basicSsl()
+    // Only use basicSsl in development (Vercel provides HTTPS in production)
+    ...(mode === 'development' ? [basicSsl()] : []),
   ],
   resolve: {
     alias: {
@@ -25,4 +26,28 @@ export default defineConfig({
       },
     },
   },
-})
+  build: {
+    // Production optimizations
+    target: 'es2020',
+    sourcemap: false,
+    // esbuild is built-in and faster than terser — no extra dependency needed
+    minify: 'esbuild',
+    rollupOptions: {
+      output: {
+        // Code splitting for better caching
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          state: ['zustand', '@tanstack/react-query'],
+          realtime: ['socket.io-client'],
+          animation: ['framer-motion', 'gsap'],
+        },
+      },
+    },
+    // Chunk size warning threshold
+    chunkSizeWarningLimit: 500,
+  },
+  // esbuild options for production
+  esbuild: mode === 'production' ? {
+    drop: ['console', 'debugger'],
+  } : undefined,
+}))

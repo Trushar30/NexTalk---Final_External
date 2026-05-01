@@ -1,13 +1,40 @@
 import os
-from fastapi import FastAPI, Header, HTTPException
+import time
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="NexTalk AI Service", version="1.0.0")
 
-# CORS
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown events."""
+    print("🚀 NexTalk AI Service starting up...")
+    start = time.time()
+
+    # Pre-warm: Import routes to trigger any lazy model loading hints
+    # Actual model loading happens on first request (lazy) to keep cold start fast
+    from routes.toxic import router as toxic_router  # noqa: F401
+    from routes.face import router as face_router  # noqa: F401
+    from routes.summarize import router as summarize_router  # noqa: F401
+
+    elapsed = time.time() - start
+    print(f"✅ AI Service ready in {elapsed:.1f}s")
+    yield
+    print("👋 AI Service shutting down...")
+
+
+app = FastAPI(
+    title="NexTalk AI Service",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# CORS — allow the Node.js backend to call this service
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,4 +61,25 @@ app.include_router(summarize_router, prefix="/summarize", tags=["Summarization"]
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "nextalk-ai"}
+    """Health check endpoint for Render / monitoring."""
+    return {
+        "status": "ok",
+        "service": "nextalk-ai",
+        "uptime": int(time.time()),
+    }
+
+
+@app.get("/ready")
+async def ready():
+    """Readiness check — returns model loading status."""
+    from routes.toxic import classifier
+    from routes.summarize import summarizer
+
+    return {
+        "status": "ok",
+        "models": {
+            "toxic_classifier": "loaded" if classifier is not None else "not_loaded",
+            "summarizer": "loaded" if summarizer is not None else "not_loaded",
+            "deepface": "lazy_load",
+        },
+    }

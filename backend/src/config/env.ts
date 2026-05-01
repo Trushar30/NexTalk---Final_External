@@ -6,12 +6,14 @@ dotenv.config();
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3001),
+
+  // Comma-separated frontend URLs for CORS (e.g. "https://nextalk.vercel.app,http://localhost:3000")
   FRONTEND_URL: z.string().default('http://localhost:3000'),
 
   // MongoDB
   MONGODB_URI: z.string().default('mongodb://localhost:27017/nextalk'),
 
-  // Redis
+  // Redis (supports both redis:// and rediss:// for TLS/Upstash)
   REDIS_URL: z.string().default('redis://localhost:6379'),
 
   // JWT
@@ -38,6 +40,12 @@ const envSchema = z.object({
   // Email
   SENDGRID_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default('noreply@nextalk.app'),
+
+  // Keep-alive self-ping URL (set to your Render URL in production)
+  KEEP_ALIVE_URL: z.string().optional(),
+
+  // Keep-alive for AI service
+  AI_KEEP_ALIVE_URL: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
@@ -48,3 +56,10 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
+
+/**
+ * Parse FRONTEND_URL into an array of allowed origins (supports comma-separated).
+ */
+export function getAllowedOrigins(): string[] {
+  return env.FRONTEND_URL.split(',').map((url) => url.trim()).filter(Boolean);
+}

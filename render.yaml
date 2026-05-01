@@ -1,0 +1,56 @@
+# Render Blueprint — Infrastructure as Code
+# Deploy both services from one repo with: https://render.com/deploy
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  # ─── Node.js Backend ──────────────────────────────────
+  - type: web
+    name: nextalk-backend
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: FRONTEND_URL
+        sync: false  # Set manually after Vercel deploy
+      - key: MONGODB_URI
+        sync: false  # Set manually — your Atlas connection string
+      - key: REDIS_URL
+        sync: false  # Set manually — your Upstash Redis URL
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: AI_SERVICE_URL
+        sync: false  # Set to your AI service Render URL
+      - key: AI_SERVICE_SECRET
+        generateValue: true
+      - key: KEEP_ALIVE_URL
+        sync: false  # Set to this service's own URL
+      - key: AI_KEEP_ALIVE_URL
+        sync: false  # Set to AI service URL
+      - key: FACE_ENCRYPTION_KEY
+        sync: false
+
+  # ─── Python AI Service ────────────────────────────────
+  - type: web
+    name: nextalk-ai
+    runtime: docker
+    region: oregon
+    plan: free
+    dockerfilePath: ./backend/ai_service/Dockerfile
+    dockerContext: ./backend/ai_service
+    healthCheckPath: /health
+    envVars:
+      - key: AI_SERVICE_SECRET
+        sync: false  # Must match backend's AI_SERVICE_SECRET
+      - key: HF_API_TOKEN
+        sync: false  # Optional: HuggingFace API token for higher limits
+      - key: ALLOWED_ORIGINS
+        sync: false  # Set to backend URL

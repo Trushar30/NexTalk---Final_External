@@ -8,6 +8,9 @@ from PIL import Image
 
 router = APIRouter()
 
+# Maximum upload size: 2MB
+MAX_IMAGE_SIZE = 2 * 1024 * 1024
+
 # Lazy-load DeepFace to avoid import errors if not installed
 deepface = None
 
@@ -23,6 +26,11 @@ def get_deepface():
             raise HTTPException(
                 status_code=503,
                 detail="DeepFace is not installed. Install with: pip install deepface"
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"DeepFace failed to load: {str(e)}"
             )
     return deepface
 
@@ -42,10 +50,29 @@ EMOTION_TO_MOOD = {
 
 
 async def load_image(image: UploadFile) -> np.ndarray:
-    """Load an uploaded image into a numpy array."""
+    """Load an uploaded image into a numpy array with size validation."""
     contents = await image.read()
-    img = Image.open(io.BytesIO(contents)).convert("RGB")
-    return np.array(img)
+
+    # Validate size
+    if len(contents) > MAX_IMAGE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image too large. Maximum size is {MAX_IMAGE_SIZE // (1024*1024)}MB"
+        )
+
+    try:
+        img = Image.open(io.BytesIO(contents)).convert("RGB")
+
+        # Resize if too large (reduce memory usage)
+        max_dim = 640
+        if max(img.size) > max_dim:
+            ratio = max_dim / max(img.size)
+            new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
+            img = img.resize(new_size, Image.Resampling.LANCZOS)
+
+        return np.array(img)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image: {str(e)}")
 
 
 class FaceRegisterResponse(BaseModel):
@@ -79,6 +106,8 @@ async def register_face(
 
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Face detection failed: {str(e)}")
+    except MemoryError:
+        raise HTTPException(status_code=503, detail="Insufficient memory for face processing. Try a smaller image.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Face registration failed: {str(e)}")
 
@@ -126,6 +155,8 @@ async def verify_face(
             confidence=round(confidence, 2),
         )
 
+    except MemoryError:
+        raise HTTPException(status_code=503, detail="Insufficient memory for face processing. Try a smaller image.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Face verification failed: {str(e)}")
 
@@ -147,5 +178,7 @@ async def detect_emotion(image: UploadFile = File(...)):
             "confidence": round(analysis[0]["emotion"].get(dominant_emotion, 0.0), 2),
             "all_emotions": {k: round(v, 2) for k, v in analysis[0]["emotion"].items()},
         }
+    except MemoryError:
+        raise HTTPException(status_code=503, detail="Insufficient memory for face processing. Try a smaller image.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Emotion detection failed: {str(e)}")

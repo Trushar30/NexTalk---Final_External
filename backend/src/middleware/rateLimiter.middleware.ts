@@ -8,6 +8,35 @@ interface RateLimitOptions {
   keyPrefix?: string;  // Custom prefix for rate limit key
 }
 
+/**
+ * In-memory fallback store when Redis is unavailable.
+ * Uses a Map with automatic cleanup of expired entries.
+ */
+const memoryStore = new Map<string, { count: number; expiresAt: number }>();
+
+// Clean up expired entries every 60 seconds
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of memoryStore.entries()) {
+    if (value.expiresAt <= now) {
+      memoryStore.delete(key);
+    }
+  }
+}, 60000);
+
+function memoryIncrement(key: string, windowMs: number): { current: number } {
+  const now = Date.now();
+  const entry = memoryStore.get(key);
+
+  if (!entry || entry.expiresAt <= now) {
+    memoryStore.set(key, { count: 1, expiresAt: now + windowMs });
+    return { current: 1 };
+  }
+
+  entry.count++;
+  return { current: entry.count };
+}
+
 export function rateLimit(options: RateLimitOptions) {
   const { windowMs, maxRequests, keyPrefix = 'rl' } = options;
   const windowS = Math.ceil(windowMs / 1000);
@@ -17,6 +46,7 @@ export function rateLimit(options: RateLimitOptions) {
     const key = `${keyPrefix}:${req.method}:${req.route?.path || req.path}:${identifier}`;
 
     try {
+      // Try Redis first
       const current = await redis.incr(key);
 
       if (current === 1) {
@@ -36,9 +66,24 @@ export function rateLimit(options: RateLimitOptions) {
 
       next();
     } catch (error) {
-      // If Redis is down, let the request through
-      console.error('Rate limiter error:', error);
-      next();
+      // Redis unavailable — fall back to in-memory rate limiting
+      try {
+        const { current } = memoryIncrement(key, windowMs);
+
+        res.setHeader('X-RateLimit-Limit', maxRequests);
+        res.setHeader('X-RateLimit-Remaining', Math.max(0, maxRequests - current));
+
+        if (current > maxRequests) {
+          res.setHeader('Retry-After', windowS);
+          sendError(res, 'Too many requests. Please try again later.', 429);
+          return;
+        }
+
+        next();
+      } catch {
+        // If even in-memory fails, let the request through
+        next();
+      }
     }
   };
 }
