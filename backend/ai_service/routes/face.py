@@ -68,49 +68,96 @@ def _image_to_bytes(img: Image.Image) -> bytes:
     return buf.getvalue()
 
 
-def _compute_face_embedding(img: Image.Image) -> list[float]:
-    """Compute a perceptual embedding from a face image using Pillow.
+def _preprocess_face(img: Image.Image) -> Image.Image:
+    """Normalize the image for consistent embedding extraction.
     
-    Uses a multi-scale approach combining:
-    1. DCT-like hash (resized grayscale pixel values)
-    2. Edge/gradient features
-    3. Regional intensity histograms
-    
-    This is lightweight (no ML model needed) and produces a 512-dim
-    embedding suitable for cosine similarity comparison.
+    - Center-crop to focus on face region (middle 70%)
+    - Resize to standard size
+    - Histogram equalization for lighting normalization
     """
+    w, h = img.size
+
+    # Center crop — faces are typically centered in webcam captures
+    crop_ratio = 0.7
+    cw, ch = int(w * crop_ratio), int(h * crop_ratio)
+    left = (w - cw) // 2
+    top = (h - ch) // 2
+    img = img.crop((left, top, left + cw, top + ch))
+
+    # Resize to standard size
+    img = img.resize((128, 128), Image.Resampling.LANCZOS)
+
+    # Histogram equalization on grayscale for lighting normalization
+    gray = img.convert("L")
+    arr = np.array(gray, dtype=np.float32)
+    
+    # Simple histogram equalization
+    hist, bins = np.histogram(arr.flatten(), bins=256, range=(0, 256))
+    cdf = hist.cumsum()
+    cdf_min = cdf[cdf > 0].min()
+    total = arr.size
+    # Normalize CDF to 0-255
+    cdf_normalized = ((cdf - cdf_min) / (total - cdf_min) * 255).astype(np.uint8)
+    equalized = cdf_normalized[arr.astype(np.uint8).flatten()].reshape(arr.shape)
+    
+    return Image.fromarray(equalized.astype(np.uint8), mode="L")
+
+
+def _compute_face_embedding(img: Image.Image) -> list[float]:
+    """Compute a robust perceptual embedding from a face image.
+    
+    Designed for stability across different lighting conditions and
+    minor angle changes. Uses histogram-heavy features which are
+    naturally invariant to brightness/contrast shifts.
+    
+    Produces a 384-dim embedding for cosine similarity comparison.
+    """
+    gray = _preprocess_face(img)
+    arr = np.array(gray, dtype=np.float32)
     embedding = []
 
-    # 1. Grayscale pixel grid (16x16 = 256 features)
-    gray = img.convert("L")
-    small = gray.resize((16, 16), Image.Resampling.LANCZOS)
-    pixels = np.array(small, dtype=np.float32).flatten()
-    pixels = (pixels - pixels.mean()) / (pixels.std() + 1e-8)
-    embedding.extend(pixels.tolist())
+    # 1. Coarse structure (8x8 = 64 features)
+    #    Captures overall face shape/layout
+    small = np.array(gray.resize((8, 8), Image.Resampling.LANCZOS), dtype=np.float32)
+    small = (small - small.mean()) / (small.std() + 1e-8)
+    embedding.extend(small.flatten().tolist())
 
-    # 2. Horizontal & vertical gradients (15x16 + 16x15 = 480 → take 128 via downscale)
-    arr = np.array(gray.resize((32, 32), Image.Resampling.LANCZOS), dtype=np.float32)
-    dx = np.diff(arr, axis=1)  # 32x31
-    dy = np.diff(arr, axis=0)  # 31x32
-    # Downsample gradients to 8x8 each = 128 features
-    dx_small = np.array(Image.fromarray(dx).resize((8, 8), Image.Resampling.LANCZOS))
-    dy_small = np.array(Image.fromarray(dy).resize((8, 8), Image.Resampling.LANCZOS))
-    grad_features = np.concatenate([dx_small.flatten(), dy_small.flatten()])
-    grad_features = (grad_features - grad_features.mean()) / (grad_features.std() + 1e-8)
-    embedding.extend(grad_features.tolist())
-
-    # 3. Regional histograms — divide into 4x4 grid, 8 bins each (128 features)
-    arr_full = np.array(gray.resize((64, 64), Image.Resampling.LANCZOS), dtype=np.float32)
-    block_h, block_w = 16, 16
+    # 2. Regional histograms — 4x4 grid, 16 bins each (256 features)
+    #    Most robust feature — invariant to exact pixel positions
+    block_h, block_w = arr.shape[0] // 4, arr.shape[1] // 4
     for row in range(4):
         for col in range(4):
-            block = arr_full[row*block_h:(row+1)*block_h, col*block_w:(col+1)*block_w]
-            hist, _ = np.histogram(block, bins=8, range=(0, 256))
+            block = arr[row*block_h:(row+1)*block_h, col*block_w:(col+1)*block_w]
+            hist, _ = np.histogram(block, bins=16, range=(0, 256))
             hist = hist.astype(np.float32)
             hist = hist / (hist.sum() + 1e-8)
             embedding.extend(hist.tolist())
 
-    return embedding  # Total: 256 + 128 + 128 = 512 dimensions
+    # 3. Gradient orientation histograms — similar to simplified HOG (64 features)
+    #    Captures edges/structure, robust to lighting
+    resized = np.array(gray.resize((32, 32), Image.Resampling.LANCZOS), dtype=np.float32)
+    dx = np.diff(resized, axis=1)  # horizontal gradients
+    dy = np.diff(resized, axis=0)  # vertical gradients
+    # Compute magnitude and orientation on overlapping region
+    min_h = min(dx.shape[0], dy.shape[0])
+    min_w = min(dx.shape[1], dy.shape[1])
+    dx_c = dx[:min_h, :min_w]
+    dy_c = dy[:min_h, :min_w]
+    magnitude = np.sqrt(dx_c**2 + dy_c**2)
+    orientation = np.arctan2(dy_c, dx_c)  # -pi to pi
+
+    # 4x4 blocks, 4 orientation bins each = 64 features
+    bh, bw = min_h // 4, min_w // 4
+    for row in range(4):
+        for col in range(4):
+            m_block = magnitude[row*bh:(row+1)*bh, col*bw:(col+1)*bw]
+            o_block = orientation[row*bh:(row+1)*bh, col*bw:(col+1)*bw]
+            hist, _ = np.histogram(o_block, bins=4, range=(-np.pi, np.pi), weights=m_block)
+            hist = hist.astype(np.float32)
+            hist = hist / (hist.sum() + 1e-8)
+            embedding.extend(hist.tolist())
+
+    return embedding  # Total: 64 + 256 + 64 = 384 dimensions
 
 
 def _get_emotion(image_bytes: bytes) -> dict:
@@ -190,11 +237,18 @@ async def verify_face(
         stored = np.array(json.loads(storedEmbedding))
         live = np.array(live_embedding)
 
+        # Handle dimension mismatch (old 512-dim vs new 384-dim embeddings)
+        if stored.shape[0] != live.shape[0]:
+            print(f"⚠️ Embedding dimension mismatch: stored={stored.shape[0]}, live={live.shape[0]}. Re-registration needed.")
+            return FaceVerifyResponse(verified=False)
+
         # Cosine similarity
-        cosine_sim = np.dot(stored, live) / (np.linalg.norm(stored) * np.linalg.norm(live) + 1e-8)
+        cosine_sim = float(np.dot(stored, live) / (np.linalg.norm(stored) * np.linalg.norm(live) + 1e-8))
         distance = 1 - cosine_sim
-        # Perceptual hash threshold is more lenient than neural embeddings
-        verified = distance < 0.45
+        # Perceptual embeddings have higher variance than neural ones — lenient threshold
+        verified = distance < 0.70
+
+        print(f"🔍 Face verify: cosine_sim={cosine_sim:.4f}, distance={distance:.4f}, verified={verified}")
 
         if not verified:
             return FaceVerifyResponse(verified=False)
