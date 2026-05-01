@@ -1,0 +1,239 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Nunito:wght@400;500;600;700&family=Sora:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* src/index.css */
+
+:root {
+  /* Color Tokens */
+  --bg-primary: #0D0F14;        /* Main background */
+  --bg-secondary: #13161D;      /* Sidebar, panels */
+  --bg-elevated: #1A1D26;       /* Cards, modals */
+  --bg-glass: rgba(255, 255, 255, 0.04);  /* Glassmorphism surfaces */
+  
+  --accent-primary: #7C3AED;    /* Violet — actions, links */
+  --accent-glow: #9F5FF1;       /* Hover states */
+  --accent-amber: #F59E0B;      /* Notifications, warnings */
+  
+  --text-primary: #F1F3F9;      /* Main text */
+  --text-secondary: #8B8FA8;    /* Subtitles, timestamps */
+  --text-muted: #4A4E63;        /* Placeholders */
+  
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-glow: rgba(124, 58, 237, 0.3);
+  
+  /* Mood Colors */
+  --mood-calm: #60A5FA;         /* Blue */
+  --mood-happy: #FBBF24;        /* Yellow */
+  --mood-focused: #34D399;      /* Green */
+  --mood-stressed: #F87171;     /* Red */
+  --mood-excited: #C084FC;      /* Purple */
+  --mood-neutral: #94A3B8;      /* Slate */
+  
+  /* Chat Colors */
+  --message-sent: #2D1B69;      /* Sent bubble */
+  --message-received: #1E2030;  /* Received bubble */
+  --one-time-msg: linear-gradient(135deg, rgba(124, 58, 237, 0.13), rgba(245, 158, 11, 0.13));
+  
+  /* Semantic Colors */
+  --danger: #EF4444;
+  --success: #10B981;
+
+  /* Spacing & Radius */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-full: 9999px;
+  
+  /* Fonts */
+  --font-heading: 'Sora', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-body: 'Nunito', sans-serif;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  /* Mesh gradient background setup */
+  background-image: 
+    radial-gradient(circle at 15% 50%, rgba(124, 58, 237, 0.06), transparent 25%),
+    radial-gradient(circle at 85% 30%, rgba(96, 165, 250, 0.04), transparent 25%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  margin: 0;
+  font-weight: 600;
+}
+
+p {
+  margin: 0;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* ─── Scrollbar Utilities ──────────────────────────────── */
+/* Hide scrollbar but keep scroll functionality */
+.no-scrollbar {
+  -ms-overflow-style: none;   /* IE and Edge */
+  scrollbar-width: none;      /* Firefox */
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;              /* Chrome, Safari, Opera */
+}
+
+/* Styled scrollbar for elements that should show one */
+.styled-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 58, 237, 0.3) transparent;
+}
+
+.styled-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.styled-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.styled-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(124, 58, 237, 0.3);
+  border-radius: 20px;
+}
+
+.styled-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(124, 58, 237, 0.5);
+}
+
+/* ─── Base utility classes for Glassmorphism ─────────── */
+.glass-panel {
+  background: var(--bg-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+}
+
+.glass-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* ─── Focus ring override ────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* ─── Selection color ────────────────────────────────── */
+::selection {
+  background: rgba(124, 58, 237, 0.3);
+  color: var(--text-primary);
+}
+
+/* ─── Animations Variables / Keyframes ──────────────── */
+@keyframes pulseBreathe {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+@keyframes waveBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmerWave {
+  0% { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ─── Shimmer loading skeleton ───────────────────────── */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 25%,
+    var(--bg-secondary) 50%,
+    var(--bg-elevated) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmerWave 1.5s linear infinite;
+}
+
+/* ─── Tooltip ─────────────────────────────────────────── */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 100;
+}
+
+[data-tooltip]:hover::after {
+  opacity: 1;
+}
