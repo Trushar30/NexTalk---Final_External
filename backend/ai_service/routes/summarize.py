@@ -18,26 +18,12 @@ class SummarizeResponse(BaseModel):
     summary: str
 
 
-# ─── HuggingFace Inference API (primary) ──
+# ─── HuggingFace Inference API ──
 HF_API_TOKEN = os.getenv("HF_API_TOKEN", "")
 HF_API_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-cnn"
 
-# ─── Local fallback model ──
-summarizer = None
-
-
-def _load_local_summarizer():
-    """Lazy-load the local summarization model as fallback."""
-    global summarizer
-    if summarizer is not None:
-        return summarizer
-    try:
-        from transformers import pipeline
-        summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
-        print("✅ Local summarizer loaded")
-    except Exception as e:
-        print(f"⚠️ Local summarizer not available: {e}")
-    return summarizer
+# Expose for readiness check
+summarizer = "api-only"
 
 
 def _format_messages(messages: list[dict]) -> str:
@@ -65,12 +51,16 @@ def _summarize_via_huggingface_api(text: str) -> str:
                 "min_length": 30,
                 "do_sample": False,
             },
+            "options": {
+                "wait_for_model": True,  # Wait if model is cold-starting on HF
+            },
         },
-        timeout=30,
+        timeout=60,
     )
 
     if response.status_code == 503:
-        raise Exception("HF model loading, fallback to local")
+        data = response.json()
+        raise Exception(f"HF model loading: {data.get('error', 'unavailable')}")
 
     response.raise_for_status()
     data = response.json()
@@ -80,30 +70,9 @@ def _summarize_via_huggingface_api(text: str) -> str:
     return text[:200]
 
 
-def _summarize_via_local_model(text: str) -> str:
-    """Use local transformers model for summarization."""
-    model = _load_local_summarizer()
-    if not model:
-        raise Exception("No local model available")
-
-    result = model(
-        text[:4000],
-        max_length=130,
-        min_length=30,
-        do_sample=False,
-    )
-    return result[0]["summary_text"]
-
-
 @router.post("", response_model=SummarizeResponse)
 async def summarize_conversation(request: SummarizeRequest):
-    """Summarize a list of conversation messages.
-    
-    Strategy:
-    1. Check cache first
-    2. Try HuggingFace Inference API (free, no local model)
-    3. Fall back to local model if HF API fails
-    """
+    """Summarize a list of conversation messages using HuggingFace Inference API."""
     text = _format_messages(request.messages)
 
     if not text:
@@ -118,19 +87,11 @@ async def summarize_conversation(request: SummarizeRequest):
         return SummarizeResponse(summary=_cache[cache_key])
 
     try:
-        # Primary: HuggingFace Inference API
         summary = _summarize_via_huggingface_api(text)
         _cache[cache_key] = summary
         return SummarizeResponse(summary=summary)
-    except Exception as hf_err:
-        print(f"⚠️ HF API failed ({hf_err}), trying local model...")
-
-    try:
-        # Fallback: Local model
-        summary = _summarize_via_local_model(text)
-        _cache[cache_key] = summary
-        return SummarizeResponse(summary=summary)
-    except Exception as local_err:
-        print(f"⚠️ Local model also failed: {local_err}")
-        # Ultimate fallback: truncated text
-        return SummarizeResponse(summary=text[:200] + "...")
+    except Exception as e:
+        print(f"⚠️ HF API failed: {e}")
+        # Fallback: return truncated text
+        fallback = text[:200] + "..."
+        return SummarizeResponse(summary=fallback)
