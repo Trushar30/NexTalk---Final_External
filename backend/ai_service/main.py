@@ -11,21 +11,20 @@ async def lifespan(app: FastAPI):
     print("🚀 NexTalk AI Service starting up...")
     start = time.time()
 
-    # Pre-warm: Import routes to trigger any lazy model loading hints
-    # Actual model loading happens on first request (lazy) to keep cold start fast
+    # Import routes (lightweight — no model loading, API-only)
     from routes.toxic import router as toxic_router  # noqa: F401
     from routes.face import router as face_router  # noqa: F401
     from routes.summarize import router as summarize_router  # noqa: F401
 
     elapsed = time.time() - start
-    print(f"✅ AI Service ready in {elapsed:.1f}s")
+    print(f"✅ AI Service ready in {elapsed:.1f}s (API-only mode, no local models)")
     yield
     print("👋 AI Service shutting down...")
 
 
 app = FastAPI(
     title="NexTalk AI Service",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
@@ -65,21 +64,20 @@ async def health():
     return {
         "status": "ok",
         "service": "nextalk-ai",
+        "mode": "api-only",
         "uptime": int(time.time()),
     }
 
 
 @app.get("/ready")
 async def ready():
-    """Readiness check — returns model loading status."""
-    from routes.toxic import classifier
-    from routes.summarize import summarizer
-
+    """Readiness check — all models are API-based, always ready."""
     return {
         "status": "ok",
         "models": {
-            "toxic_classifier": "loaded" if classifier is not None else "not_loaded",
-            "summarizer": "loaded" if summarizer is not None else "not_loaded",
-            "deepface": "lazy_load",
+            "toxic_classifier": "huggingface-api",
+            "summarizer": "huggingface-api",
+            "face_embedding": "huggingface-api",
+            "emotion_detection": "huggingface-api",
         },
     }

@@ -20,30 +20,12 @@ class ToxicCheckResponse(BaseModel):
     categories: list[str]
 
 
-# ─── HuggingFace Inference API (primary — no local model needed) ──
+# ─── HuggingFace Inference API ──
 HF_API_TOKEN = os.getenv("HF_API_TOKEN", "")
 HF_API_URL = "https://api-inference.huggingface.co/models/unitary/toxic-bert"
 
-# ─── Local fallback model ──
-classifier = None
-
-
-def _load_local_classifier():
-    """Lazy-load the local toxic-bert model as fallback."""
-    global classifier
-    if classifier is not None:
-        return classifier
-    try:
-        from transformers import pipeline
-        classifier = pipeline(
-            "text-classification",
-            model="unitary/toxic-bert",
-            top_k=None,
-        )
-        print("✅ Local toxic classifier loaded")
-    except Exception as e:
-        print(f"⚠️ Local toxic classifier not available: {e}")
-    return classifier
+# Expose for readiness check
+classifier = "api-only"
 
 
 def _check_via_huggingface_api(content: str) -> dict:
@@ -55,13 +37,18 @@ def _check_via_huggingface_api(content: str) -> dict:
     response = http_requests.post(
         HF_API_URL,
         headers=headers,
-        json={"inputs": content[:512]},
-        timeout=15,
+        json={
+            "inputs": content[:512],
+            "options": {
+                "wait_for_model": True,
+            },
+        },
+        timeout=30,
     )
 
     if response.status_code == 503:
-        # Model is loading on HF side
-        raise Exception("HF model loading, fallback to local")
+        data = response.json()
+        raise Exception(f"HF model loading: {data.get('error', 'unavailable')}")
 
     response.raise_for_status()
     data = response.json()
@@ -89,58 +76,19 @@ def _check_via_huggingface_api(content: str) -> dict:
     return {"isToxic": False, "score": 0.0, "categories": []}
 
 
-def _check_via_local_model(content: str) -> dict:
-    """Use local transformers model for toxicity check."""
-    model = _load_local_classifier()
-    if not model:
-        raise Exception("No local model available")
-
-    results = model(content[:512])[0]
-    toxic_labels = {
-        r["label"]: r["score"]
-        for r in results
-        if r["score"] > 0.5
-    }
-    is_toxic = any(
-        label in ["toxic", "severe_toxic", "threat", "insult", "obscene"]
-        for label in toxic_labels
-    )
-    max_score = max((r["score"] for r in results), default=0.0)
-    return {
-        "isToxic": is_toxic,
-        "score": round(max_score, 4),
-        "categories": list(toxic_labels.keys()),
-    }
-
-
 @router.post("/check", response_model=ToxicCheckResponse)
 async def check_toxicity(request: ToxicCheckRequest):
-    """Check if a message contains toxic content.
-    
-    Strategy:
-    1. Check cache first
-    2. Try HuggingFace Inference API (free, no local model)
-    3. Fall back to local model if HF API fails
-    """
+    """Check if a message contains toxic content using HuggingFace Inference API."""
     # Check cache
     cache_key = request.content[:256]
     if cache_key in _cache:
         return ToxicCheckResponse(**_cache[cache_key])
 
     try:
-        # Primary: HuggingFace Inference API
         result = _check_via_huggingface_api(request.content)
         _cache[cache_key] = result
         return ToxicCheckResponse(**result)
-    except Exception as hf_err:
-        print(f"⚠️ HF API failed ({hf_err}), trying local model...")
-
-    try:
-        # Fallback: Local model
-        result = _check_via_local_model(request.content)
-        _cache[cache_key] = result
-        return ToxicCheckResponse(**result)
-    except Exception as local_err:
-        print(f"⚠️ Local model also failed: {local_err}")
-        # Ultimate fallback: return safe (non-toxic) to not block messages
+    except Exception as e:
+        print(f"⚠️ HF API failed: {e}")
+        # Fallback: return safe (non-toxic) to not block messages
         return ToxicCheckResponse(isToxic=False, score=0.0, categories=[])
