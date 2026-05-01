@@ -19,14 +19,20 @@ export function Sidebar() {
   ];
 
   return (
-    <aside className="w-16 h-screen flex-shrink-0 bg-bg-secondary border-r border-border-subtle flex flex-col items-center py-6 z-20 hidden md:flex">
-      {/* Brand */}
-      <NavLink to="/" className="w-10 h-10 rounded-xl bg-accent-primary flex items-center justify-center mb-8 hover:bg-accent-glow transition-colors">
+    <aside className={cn(
+      "flex-shrink-0 bg-bg-secondary border-border-subtle z-50",
+      // Desktop: Vertical Sidebar
+      "md:w-16 md:h-[100dvh] md:border-r md:flex md:flex-col md:items-center md:py-6 md:relative md:top-0",
+      // Mobile: Bottom Navigation Bar
+      "fixed bottom-0 left-0 w-full h-16 border-t flex flex-row items-center justify-around px-2"
+    )}>
+      {/* Brand - Desktop Only */}
+      <NavLink to="/" className="w-10 h-10 rounded-xl bg-accent-primary items-center justify-center mb-8 hover:bg-accent-glow transition-colors hidden md:flex">
         <span className="text-white font-heading font-bold text-lg">N</span>
       </NavLink>
 
       {/* Nav Actions */}
-      <nav className="flex-1 w-full flex flex-col items-center gap-6">
+      <nav className="flex-1 w-full flex flex-row md:flex-col items-center justify-around md:justify-start gap-0 md:gap-6">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
@@ -43,16 +49,36 @@ export function Sidebar() {
               <>
                 {item.icon}
                 {isActive && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-accent-primary rounded-r-full" />
+                  <>
+                    {/* Desktop indicator */}
+                    <div className="hidden md:block absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-accent-primary rounded-r-full" />
+                    {/* Mobile indicator */}
+                    <div className="block md:hidden absolute bottom-0 left-1/2 -translate-x-1/2 w-6 h-1 bg-accent-primary rounded-t-full" />
+                  </>
                 )}
               </>
             )}
           </NavLink>
         ))}
+
+        {/* Profile (Mobile Only - inline with nav items) */}
+        <button 
+          title="Profile"
+          onClick={() => setViewingProfile('me')}
+          className="flex md:hidden items-center justify-center w-12 h-12 rounded-2xl focus:outline-none"
+        >
+          <Avatar 
+            src={user?.avatarUrl} 
+            alt={user?.displayName || 'Me'} 
+            size="sm" 
+            mood={mood} 
+            showMood 
+          />
+        </button>
       </nav>
 
-      {/* Bottom Actions (Settings, Profile) */}
-      <div className="flex flex-col items-center gap-6 mt-auto">
+      {/* Bottom Actions (Settings, Profile) - Desktop Only */}
+      <div className="hidden md:flex flex-col items-center gap-6 mt-auto">
         <NavLink
             to="/settings"
             title="Settings"

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Phone, Video, Search, MoreVertical, Flame, Paperclip, Smile, Send,
   ShieldAlert, Lock, Trash2, Sparkles, X, Loader2, CheckSquare,
-  CheckCheck,
+  CheckCheck, ArrowLeft,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
@@ -42,7 +42,7 @@ export function ChatArea() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { user } = useAuthStore();
-  const { activeConversationId, typingUsers } = useStore();
+  const { activeConversationId, typingUsers, setActiveConversation } = useStore();
 
   // Close header menu on outside click
   useEffect(() => {
@@ -276,7 +276,7 @@ export function ChatArea() {
   // No conversation selected
   if (!activeConversationId) {
     return (
-      <div className="flex-1 flex flex-col h-screen bg-bg-primary items-center justify-center">
+      <div className="hidden md:flex flex-1 flex-col h-[100dvh] bg-bg-primary items-center justify-center">
         <div className="text-center space-y-4">
           <div className="w-20 h-20 bg-bg-secondary rounded-full flex items-center justify-center mx-auto border border-border-subtle">
             <span className="text-3xl">💬</span>
@@ -289,11 +289,24 @@ export function ChatArea() {
   }
 
   return (
-    <div className="flex-1 flex flex-col h-screen bg-bg-primary relative">
+    <div className={cn(
+      "flex flex-col relative bg-bg-primary",
+      // Desktop: Flex-1
+      "md:flex-1 md:h-[100dvh] md:flex",
+      // Mobile: Full width, hide if NO conversation active
+      !activeConversationId ? "hidden" : "w-full flex-1 flex h-[100dvh]"
+    )}>
 
       {/* ─── Chat Header ──────────────────────────────────── */}
-      <header className="h-20 border-b border-border-subtle bg-bg-primary/50 backdrop-blur-md flex items-center justify-between px-6 z-10 sticky top-0">
-        <div className="flex items-center gap-4">
+      <header className="h-16 md:h-20 border-b border-border-subtle bg-bg-primary/50 backdrop-blur-md flex items-center justify-between px-4 md:px-6 z-10 sticky top-0">
+        <div className="flex items-center gap-3 md:gap-4">
+          {/* Mobile Back Button */}
+          <button 
+            onClick={() => setActiveConversation(null)} 
+            className="md:hidden flex items-center justify-center w-10 h-10 -ml-2 rounded-full hover:bg-bg-secondary text-text-primary transition-colors focus:outline-none"
+          >
+            <ArrowLeft className="w-6 h-6" />
+          </button>
           <Avatar src={otherUser?.avatarUrl} alt={convName || 'User'} size="md" mood={otherMood} showMood />
           <div>
             <div className="flex items-center gap-2">
@@ -307,10 +320,10 @@ export function ChatArea() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="rounded-full"><Phone className="w-5 h-5 text-text-secondary" /></Button>
-          <Button variant="ghost" size="icon" className="rounded-full"><Video className="w-5 h-5 text-text-secondary" /></Button>
-          <Button variant="ghost" size="icon" className="rounded-full"><Search className="w-5 h-5 text-text-secondary" /></Button>
+        <div className="flex items-center gap-1 md:gap-2">
+          <Button variant="ghost" size="icon" className="rounded-full hidden sm:flex"><Phone className="w-5 h-5 text-text-secondary" /></Button>
+          <Button variant="ghost" size="icon" className="rounded-full hidden sm:flex"><Video className="w-5 h-5 text-text-secondary" /></Button>
+          <Button variant="ghost" size="icon" className="rounded-full hidden sm:flex"><Search className="w-5 h-5 text-text-secondary" /></Button>
 
           {/* 3-dot header menu */}
           <div className="relative" ref={headerMenuRef}>
@@ -377,7 +390,7 @@ export function ChatArea() {
       </AnimatePresence>
 
       {/* ─── Messages Feed ────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-2 flex flex-col no-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-2 flex flex-col no-scrollbar">
         {loading ? (
           <div className="flex items-center justify-center flex-1">
             <div className="w-8 h-8 border-2 border-accent-primary border-t-transparent rounded-full animate-spin" />
@@ -468,7 +481,7 @@ export function ChatArea() {
                 )}
 
                 <div className={cn(
-                  'relative p-4 rounded-2xl text-sm transition-all duration-150',
+                  'relative p-3 md:p-4 rounded-2xl text-[13px] md:text-sm transition-all duration-150',
                   isMine
                     ? 'bg-message-sent rounded-br-sm shadow-[0_4px_15px_rgba(124,58,237,0.15)]'
                     : 'bg-message-received rounded-bl-sm border border-border-subtle',
@@ -531,7 +544,7 @@ export function ChatArea() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 60, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-            className="p-4 px-6 bg-bg-elevated/90 backdrop-blur-xl border-t border-border-subtle sticky bottom-0 z-10"
+            className="p-3 md:p-4 px-4 md:px-6 bg-bg-elevated/90 backdrop-blur-xl border-t border-border-subtle sticky bottom-0 z-10"
           >
             <div className="flex items-center gap-3">
               {/* Delete selected */}
@@ -597,7 +610,7 @@ export function ChatArea() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 60, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-            className="p-4 bg-bg-primary border-t border-border-subtle px-6 sticky bottom-0 z-10"
+            className="p-3 md:p-4 bg-bg-primary border-t border-border-subtle px-4 md:px-6 sticky bottom-0 z-10 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]"
           >
 
             <div className={cn(

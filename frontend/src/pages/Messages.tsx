@@ -4,7 +4,7 @@ import { ChatArea } from '@/components/layout/ChatArea';
 
 export default function MessagesScreen() {
   return (
-    <div className="flex h-screen w-full bg-bg-primary overflow-hidden relative">
+    <div className="flex flex-col md:flex-row h-[100dvh] w-full bg-bg-primary overflow-hidden relative">
       <Sidebar />
       <ConversationList />
       <ChatArea />

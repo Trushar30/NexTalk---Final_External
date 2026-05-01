@@ -74,7 +74,13 @@ export function ConversationList() {
   });
 
   return (
-    <div className="w-80 h-screen bg-bg-primary border-r border-border-subtle flex flex-col flex-shrink-0 z-10 hidden md:flex">
+    <div className={cn(
+      "bg-bg-primary flex flex-col flex-shrink-0 z-10",
+      // Desktop: Fixed width sidebar
+      "md:w-80 md:h-[100dvh] md:border-r md:border-border-subtle md:flex",
+      // Mobile: Full width, hide if conversation is active
+      activeConversationId ? "hidden" : "w-full flex-1 flex pb-16 md:pb-0" // Add pb-16 for mobile bottom nav
+    )}>
       {/* Header & Search */}
       <div className="p-4 space-y-4">
         <h2 className="text-xl font-bold font-heading">Messages</h2>

@@ -9,9 +9,9 @@ interface AppLayoutProps {
 
 export function AppLayout({ children, fullHeight = false }: AppLayoutProps) {
   return (
-    <div className="flex h-screen w-full bg-bg-primary overflow-hidden relative">
+    <div className="flex flex-col md:flex-row h-[100dvh] w-full bg-bg-primary overflow-hidden relative">
       <Sidebar />
-      <main className={`flex-1 w-full h-full relative ${fullHeight ? 'overflow-hidden flex' : 'overflow-y-auto'}`}>
+      <main className={`flex-1 w-full h-full relative ${fullHeight ? 'overflow-hidden flex' : 'overflow-y-auto pb-16 md:pb-0'}`}>
         {children}
       </main>
     </div>

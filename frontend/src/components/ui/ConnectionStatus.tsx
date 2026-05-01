@@ -61,9 +61,9 @@ export function ConnectionStatus() {
 
   return (
     <div
+      className="md:bottom-4 bottom-[84px]"
       style={{
         position: 'fixed',
-        bottom: 16,
         right: 16,
         zIndex: 99999,
         fontFamily: "'Inter', system-ui, sans-serif",
