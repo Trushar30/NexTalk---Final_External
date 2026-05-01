@@ -2,7 +2,6 @@ import { Server } from 'socket.io';
 import { Server as HttpServer } from 'http';
 import { verifyAccessToken } from '../utils/jwt';
 import { presenceService } from '../services/presence.service';
-import { redis } from '../config/redis';
 import { registerChatHandlers } from './chat.handler';
 import { registerPresenceHandlers } from './presence.handler';
 import { ServerToClientEvents, ClientToServerEvents, SocketData } from '../types';
@@ -19,6 +18,7 @@ export function initializeSocket(httpServer: HttpServer): Server<ClientToServerE
         if (env.NODE_ENV === 'development' && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
           return callback(null, true);
         }
+        console.warn(`⚠️ Socket CORS rejected origin: ${origin}`);
         callback(new Error('CORS: Origin not allowed'));
       },
       methods: ['GET', 'POST'],
@@ -27,11 +27,11 @@ export function initializeSocket(httpServer: HttpServer): Server<ClientToServerE
     // Production-optimized settings
     pingTimeout: 60000,
     pingInterval: 25000,
-    // Transport configuration
-    transports: ['websocket', 'polling'], // Prefer WebSocket, fallback to polling
+    // Transport configuration — polling first for better compatibility behind reverse proxies
+    transports: ['polling', 'websocket'],
     allowUpgrades: true,
     // Performance
-    perMessageDeflate: false, // Disable compression for lower latency
+    perMessageDeflate: false,
     httpCompression: false,
     // Connection limits
     maxHttpBufferSize: 1e6, // 1MB max message size
@@ -49,14 +49,17 @@ export function initializeSocket(httpServer: HttpServer): Server<ClientToServerE
       const payload = verifyAccessToken(token);
       socket.data.userId = payload.userId;
 
-      // Set user online
-      await presenceService.setOnline(payload.userId);
+      // Set user online (non-blocking — socket connects even if Redis fails)
+      presenceService.setOnline(payload.userId).catch((err) => {
+        console.warn('⚠️ setOnline failed in socket auth:', err.message);
+      });
 
       // Join personal room for targeted events
       socket.join(`user:${payload.userId}`);
 
       next();
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Socket auth failed:', error.message);
       next(new Error('Invalid token'));
     }
   });
@@ -73,16 +76,19 @@ export function initializeSocket(httpServer: HttpServer): Server<ClientToServerE
     registerChatHandlers(io, socket);
     registerPresenceHandlers(io, socket);
 
-    // Heartbeat
-    socket.on('heartbeat', async () => {
-      await presenceService.refreshHeartbeat(userId);
+    // Heartbeat — non-blocking
+    socket.on('heartbeat', () => {
+      presenceService.refreshHeartbeat(userId).catch(() => {});
     });
 
-    // Disconnect
-    socket.on('disconnect', async () => {
+    // Disconnect — non-blocking
+    socket.on('disconnect', () => {
       console.log(`🔌 Socket disconnected: ${userId} (${socket.id})`);
-      const lastSeenAt = await presenceService.setOffline(userId);
-      io.emit('user:offline', { userId, lastSeenAt });
+      presenceService.setOffline(userId).then((lastSeenAt) => {
+        io.emit('user:offline', { userId, lastSeenAt });
+      }).catch(() => {
+        io.emit('user:offline', { userId, lastSeenAt: new Date() });
+      });
     });
   });
 
