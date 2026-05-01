@@ -10,6 +10,7 @@ Strategy:
 import os
 import re
 import random
+import requests
 from collections import Counter
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -20,8 +21,11 @@ router = APIRouter()
 # ─── Cache (same input → same prediction for 5 min) ──────
 _cache = TTLCache(maxsize=200, ttl=300)
 
-# ─── HuggingFace client ──────────────────────────────────
+# ─── API Clients & Keys ──────────────────────────────────
 HF_API_TOKEN = os.getenv("HF_API_TOKEN", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+
 _client = None
 
 
@@ -279,6 +283,105 @@ def _predict_via_huggingface(message: str, history: list[str], profile: StylePro
     return result.strip() if isinstance(result, str) else str(result).strip()
 
 
+# ─── Gemini AI Prediction ────────────────────────────────
+
+def _predict_via_gemini(message: str, history: list[str], profile: StyleProfile, name: str) -> str:
+    """Use Google Gemini API to predict a reply."""
+    if not GEMINI_API_KEY:
+        raise Exception("No Gemini API key")
+
+    style_desc = (
+        f"You are roleplaying as {name}. "
+        f"Their communication style: "
+        f"Average message length ~{profile.avg_length:.0f} words. "
+        f"Emoji usage: {'frequent' if profile.emoji_frequency > 0.5 else 'occasional' if profile.emoji_frequency > 0.1 else 'rare'}. "
+        f"Favorite emojis: {', '.join(profile.favorite_emojis[:3]) if profile.favorite_emojis else 'none'}. "
+        f"Punctuation style: {profile.punctuation_style}. "
+        f"Capitalization: {profile.capitalization}. "
+        f"Vocabulary: {profile.vocabulary_level}. "
+        f"Slang usage: {profile.slang_level}. "
+        f"Current mood: {profile.mood}. "
+        f"They often start messages with: {', '.join(profile.response_patterns[:3]) if profile.response_patterns else 'varied'}."
+    )
+
+    recent = history[-10:] if len(history) > 10 else history
+    history_text = "\n".join(f"- {m}" for m in recent)
+
+    prompt = (
+        f"{style_desc}\n\n"
+        f"Here are some of {name}'s recent messages for context:\n{history_text}\n\n"
+        f"Someone just sent this message to {name}: \"{message}\"\n\n"
+        f"Write a short, natural reply exactly as {name} would write it. "
+        f"Match their exact style, length, emoji usage, and mood. "
+        f"Only output the reply text, nothing else."
+    )
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    
+    resp = requests.post(url, json=payload, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    
+    try:
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except (KeyError, IndexError):
+        raise Exception("Invalid Gemini response format")
+
+
+# ─── Groq AI Prediction ──────────────────────────────────
+
+def _predict_via_groq(message: str, history: list[str], profile: StyleProfile, name: str) -> str:
+    """Use Groq API (Llama3) to predict a reply."""
+    if not GROQ_API_KEY:
+        raise Exception("No Groq API key")
+
+    style_desc = (
+        f"You are roleplaying as {name}. "
+        f"Their communication style: "
+        f"Average message length ~{profile.avg_length:.0f} words. "
+        f"Emoji usage: {'frequent' if profile.emoji_frequency > 0.5 else 'occasional' if profile.emoji_frequency > 0.1 else 'rare'}. "
+        f"Favorite emojis: {', '.join(profile.favorite_emojis[:3]) if profile.favorite_emojis else 'none'}. "
+        f"Punctuation style: {profile.punctuation_style}. "
+        f"Capitalization: {profile.capitalization}. "
+        f"Vocabulary: {profile.vocabulary_level}. "
+        f"Slang usage: {profile.slang_level}. "
+        f"Current mood: {profile.mood}. "
+    )
+
+    recent = history[-10:] if len(history) > 10 else history
+    history_text = "\n".join(f"- {m}" for m in recent)
+
+    prompt = (
+        f"Here are some of {name}'s recent messages for context:\n{history_text}\n\n"
+        f"Someone just sent this message to {name}: \"{message}\"\n\n"
+        f"Write a short, natural reply exactly as {name} would write it. "
+        f"Match their exact style, length, emoji usage, and mood. "
+        f"Only output the reply text, nothing else."
+    )
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+    payload = {
+        "model": "llama3-8b-8192",
+        "messages": [
+            {"role": "system", "content": style_desc},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 150
+    }
+    
+    resp = requests.post(url, headers=headers, json=payload, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    
+    try:
+        return data["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError):
+        raise Exception("Invalid Groq response format")
+
+
 # ─── Built-in Template Prediction ────────────────────────
 
 # Mood-based response templates
@@ -488,23 +591,42 @@ async def predict_reply(request: CloneRequest):
     # Build style profile
     profile = _build_style_profile(request.target_history, request.target_mood)
 
-    # Try HuggingFace API first
     method = "template"
     prediction = ""
 
-    if HF_API_TOKEN:
+    # Waterfall fallback strategy for robust AI responses
+
+    # 1. Try HuggingFace
+    if HF_API_TOKEN and not prediction:
         try:
             prediction = _predict_via_huggingface(
-                request.message,
-                request.target_history,
-                profile,
-                request.target_name,
+                request.message, request.target_history, profile, request.target_name
             )
-            method = "ai"
+            method = "hf-ai"
         except Exception as e:
-            print(f"⚠️ HF clone prediction failed: {e}, using template engine")
+            print(f"⚠️ HF clone failed: {e}")
 
-    # Fallback to template engine
+    # 2. Try Gemini
+    if GEMINI_API_KEY and not prediction:
+        try:
+            prediction = _predict_via_gemini(
+                request.message, request.target_history, profile, request.target_name
+            )
+            method = "gemini-ai"
+        except Exception as e:
+            print(f"⚠️ Gemini clone failed: {e}")
+
+    # 3. Try Groq
+    if GROQ_API_KEY and not prediction:
+        try:
+            prediction = _predict_via_groq(
+                request.message, request.target_history, profile, request.target_name
+            )
+            method = "groq-ai"
+        except Exception as e:
+            print(f"⚠️ Groq clone failed: {e}")
+
+    # 4. Fallback to template engine
     if not prediction:
         prediction = _template_predict(request.message, profile)
         method = "template"
