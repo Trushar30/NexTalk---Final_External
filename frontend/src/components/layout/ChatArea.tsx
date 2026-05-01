@@ -90,7 +90,7 @@ export function ChatArea() {
     return () => { emitSocketEvent('leave:conversation', { conversationId: activeConversationId }); };
   }, [activeConversationId, scrollToBottom]);
 
-  // Real-time new messages
+  // Real-time new messages (deduplicated by _id)
   useEffect(() => {
     if (!activeConversationId) return;
     const unsub = onSocketEvent<{ message: Message; conversationId: string }>('message:new', (data) => {
@@ -99,7 +99,11 @@ export function ChatArea() {
           ...data.message,
           content: data.message.content ? decryptMessage(data.message.content) : data.message.content
         };
-        setMessages(prev => [...prev, decryptedMessage]);
+        setMessages(prev => {
+          // Deduplicate: don't add if message already exists (e.g. sender's own message from REST response)
+          if (prev.some(m => m._id === decryptedMessage._id)) return prev;
+          return [...prev, decryptedMessage];
+        });
         setTimeout(scrollToBottom, 100);
       }
     });
@@ -131,9 +135,9 @@ export function ChatArea() {
     setMessageText('');
     setSending(true);
     try {
-      const msg = await conversationsApi.sendMessage(activeConversationId, { content, type: 'TEXT', isOneTime });
-      setMessages(prev => [...prev, msg]);
-      setTimeout(scrollToBottom, 100);
+      await conversationsApi.sendMessage(activeConversationId, { content, type: 'TEXT', isOneTime });
+      // Don't add to messages here — the socket 'message:new' event will deliver it
+      // This ensures both sender and receiver get the message via the same path
       if (isOneTime) setIsOneTime(false);
     } catch (err) {
       console.error('Failed to send message:', err);

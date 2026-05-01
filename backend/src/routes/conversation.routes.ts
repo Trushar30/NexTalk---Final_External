@@ -93,6 +93,17 @@ router.post('/:id/messages', authenticate, messageLimiter, validate(sendMessageS
       conversationId: req.params.id,
       ...req.body,
     });
+
+    // Emit real-time event to all users in the conversation
+    const io = req.app.get('io');
+    if (io) {
+      const populated = await message.populate('senderId', 'username displayName avatarUrl');
+      io.to(req.params.id).emit('message:new', {
+        message: populated.toObject(),
+        conversationId: req.params.id,
+      });
+    }
+
     sendCreated(res, message);
   } catch (err) { next(err); }
 });
