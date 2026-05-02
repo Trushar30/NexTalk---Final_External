@@ -464,7 +464,6 @@ export function ChatArea() {
           </div>
         ) : messages.length === 0 ? (
           <div className="flex items-center justify-center flex-1 text-text-muted text-sm">
-            <p>No messages yet. Say hello! 👋</p>
           </div>
         ) : (
           messages.map((msg) => {

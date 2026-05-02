@@ -120,8 +120,6 @@ export function ConversationList() {
           </div>
         ) : filteredConversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-text-muted text-sm">
-            <p>No conversations yet</p>
-            <p className="text-xs mt-1">Start a conversation from Search</p>
           </div>
         ) : (
           filteredConversations.map(conv => {
@@ -170,7 +168,7 @@ export function ConversationList() {
                   
                   <div className="flex items-center gap-1">
                     <p className="text-xs truncate text-text-secondary">
-                      {conv.lastMessage?.content || 'No messages yet'}
+                      {conv.lastMessage?.content || ''}
                     </p>
                   </div>
                 </div>
