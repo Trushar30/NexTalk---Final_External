@@ -30,7 +30,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       setTokens(result.accessToken, result.refreshToken);
       set({ user: result.user, isAuthenticated: true, isLoading: false });
     } catch (err: any) {
-      const message = err.response?.data?.error || err.message || 'Login failed';
+      const data = err.response?.data;
+      const message = (data?.details && data.details[0]) || data?.error || err.message || 'Login failed';
       set({ error: message, isLoading: false });
       throw err;
     }
@@ -48,7 +49,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       return { verified: result.verified, mood: result.mood };
     } catch (err: any) {
-      const message = err.response?.data?.error || err.message || 'Face login failed';
+      const data = err.response?.data;
+      const message = (data?.details && data.details[0]) || data?.error || err.message || 'Face login failed';
       set({ error: message, isLoading: false });
       throw err;
     }
@@ -61,7 +63,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       setTokens(result.accessToken, result.refreshToken);
       set({ user: result.user, isAuthenticated: true, isLoading: false });
     } catch (err: any) {
-      const message = err.response?.data?.error || err.message || 'Signup failed';
+      const data = err.response?.data;
+      const message = (data?.details && data.details[0]) || data?.error || err.message || 'Signup failed';
       set({ error: message, isLoading: false });
       throw err;
     }

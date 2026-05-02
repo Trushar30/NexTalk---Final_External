@@ -108,7 +108,7 @@ export default function SignupPage() {
                 placeholder="Username" 
                 icon={<span className="font-mono text-text-muted">@</span>}
                 value={username}
-                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/\s/g, ''))}
+                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
                 required 
               />
               {username.length > 2 && (
